@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чат-бот Адмін</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+        }
+
+        .chat-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+
+        .sidebar {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        .messages-container {
+            height: 500px;
+            overflow-y: auto;
+            padding: 20px;
+            background-color: #2a2a2a;
+            border-radius: 10px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            max-width: 80%;
+        }
+
+        .message-user {
+            background-color: #2196F3;
+            margin-left: 20%;
+        }
+
+        .message-bot {
+            background-color: #424242;
+            margin-right: 20%;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        input {
+            flex-grow: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #2a2a2a;
+            color: white;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background-color: #2196F3;
+            color: white;
+            cursor: pointer;
+        }
+
+        .learning-controls button {
+            width: 100%;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="sidebar">
+            <h2>Керування</h2>
+            <div class="learning-controls">
+                <button id="show-learned">Показати вивчене</button>
+                <button id="clear-learned">Очистити навчання</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="messages-container" id="messages-container"></div>
+            <div class="input-container">
+                <input type="text" 
+                       id="message-input" 
+                       placeholder="Введіть ваше повідомлення..."
+                       autocomplete="off">
+                <button id="send-button">Надіслати</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Конфігурація Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAlYMNd3nyeNc-idjrtf64mxj2RZlDDOgA",
+            authDomain: "chatbot-84ee8.firebaseapp.com",
+            databaseURL: "https://chatbot-84ee8-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "chatbot-84ee8",
+            storageBucket: "chatbot-84ee8.firebasestorage.app",
+            messagingSenderId: "593063910772",
+            appId: "1:593063910772:web:42a3534bca32364b5c2021",
+            measurementId: "G-H98JBRP68C"
+        };
+
+        // Ініціалізація Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        class ChatBot {
+            constructor() {
+                this.learningData = new Map();
+                this.loadFromFirebase();
+            }
+
+            async loadFromFirebase() {
+                const snapshot = await database.ref('learningData').once('value');
+                const data = snapshot.val() || {};
+                this.learningData = new Map(Object.entries(data));
+                console.log('Дані завантажено:', this.learningData);
+            }
+
+            async learn(question, answer) {
+                question = question.toLowerCase();
+                this.learningData.set(question, answer);
+                await database.ref('learningData').set(Object.fromEntries(this.learningData));
+                return `Я запам'ятав: "${question}" -> "${answer}"`;
+            }
+
+            async processMessage(message) {
+                message = message.toLowerCase();
+                
+                if (message.startsWith('навчись:')) {
+                    try {
+                        const [_, data] = message.split('навчись:');
+                        const [question, answer] = data.split('=').map(s => s.trim());
+                        return await this.learn(question, answer);
+                    } catch (e) {
+                        return "Формат навчання: навчись: питання = відповідь";
+                    }
+                }
+
+                if (this.learningData.has(message)) {
+                    return this.learningData.get(message);
+                }
+
+                return "Вибачте, я не знаю відповіді на це питання. Навчіть мене, використовуючи формат: навчись: питання = відповідь";
+            }
+
+            getLearnedData() {
+                return Array.from(this.learningData.entries())
+                    .map(([q, a]) => `Питання: "${q}" -> Відповідь: "${a}"`)
+                    .join('\n');
+            }
+
+            async clearLearned() {
+                this.learningData.clear();
+                await database.ref('learningData').remove();
+                return "Всі вивчені дані очищено";
+            }
+        }
+
+        const chatbot = new ChatBot();
+        const messagesContainer = document.getElementById('messages-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const showLearnedButton = document.getElementById('show-learned');
+        const clearLearnedButton = document.getElementById('clear-learned');
+
+        function addMessage(content, isUser = false) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${isUser ? 'message-user' : 'message-bot'}`;
+            messageElement.textContent = content;
+            messagesContainer.appendChild(messageElement);
+            messageElement.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        async function handleSendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            messageInput.value = '';
+            addMessage(message, true);
+
+            try {
+                const response = await chatbot.processMessage(message);
+                addMessage(response);
+            } catch (error) {
+                console.error('Помилка:', error);
+                addMessage('Вибачте, сталася помилка. Спробуйте ще раз.');
+            }
+        }
+
+        sendButton.addEventListener('click', handleSendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSendMessage();
+            }
+        });
+
+        showLearnedButton.addEventListener('click', () => {
+            const learnedData = chatbot.getLearnedData();
+            if (learnedData) {
+                addMessage("Ось що я вивчив:\n" + learnedData);
+            } else {
+                addMessage("Я ще нічого не вивчив.");
+            }
+        });
+
+        clearLearnedButton.addEventListener('click', async () => {
+            const response = await chatbot.clearLearned();
+            addMessage(response);
+        });
+
+        // Початкове повідомлення
+        addMessage('Вітаю! Я ваш віртуальний помічник. Ви можете навчити мене, використовуючи формат: "навчись: питання = відповідь"');
+    </script>
+</body>
+</html>
